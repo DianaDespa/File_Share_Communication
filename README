@@ -1,0 +1,111 @@
+Despa Diana Alexandra 321CA
+
+	Tema 3 Protocoale de Comunicatie - Sistem de Partajare a Fisierelor
+	
+	In implementarea temei am folosit scheletul de cod le la laboratorul de
+multiplexare.
+	Pentru includerea tuturor bibliotecilor utilizate si definirea simbolurilor
+am creat un header-ul helpers.h. De asemenea, acolo am definit si structura
+Client, care contine date utile despre clienti: IP, portul pe care asculta,
+socketul prin care un alt client poate comunica cu el(mai multe detalii in
+sectiunea "Client"), un vector de fisiere partajate care retine perechi formate
+din numele fisierelor si respectiv dimensiunea lui.
+	
+	Server
+		In implementarea serverului am folosit doua structuri de date: un
+vector de perechi formate din nume de clienti si respectiv socketii prin care
+serverul comunica cu ei, si o tabela de dispersie care are drept chei nume de
+clienti si drept valori pointeri la structuri de tip Client. Am folosit
+vectorul pentru a retine in ordine clientii, pe masura ce ei se conecteaza la
+server, iar tabela pentru a avea acces foarte usor la date despre un client.
+Astfel, daca se doreste de exemplu portul pe care asculta clientul care s-a
+conectat al doilea, el este accesat astfel:
+clients[in_order_clients[2].first]->port.
+		Am implementat functii auxiliare(get_time, error, get_name,
+elem_position, human_readable), si functii care realizeaza actiunile specifice
+fiecarei comenzi. 
+		In programul principal este creat un socket pe care serverul asculta
+pentru conexiuni noi(clienti). Prin multiplexare, sunt determinate conexiunile
+pe care au venit mesaje. Cand primesc ceva pe socketul care asculta, stiu ca
+este un nou client si stiu ca el imediat dupa ce se conecteaza trimite un mesaj
+cu numele lui si portul pe care asculta. Deci citesc de pe socket acest mesaj
+si il procesez: daca exista un alt client cu acelasi nume deja conectat,
+serverul trimite cod de eroare -4 si nu accepta conexiunea; altfel creez o
+instanta de Client si ii completez campurile cu informatia din mesaj, dupa care
+trimit mesajul "ok" pentru confirmarea conexiunii.
+		Cand primesc un mesaj de la standard input, verific daca el este o
+comanda valida. In cazul "quit" inchid conexiunile cu toti clientii si socketul
+pe care asculta si ies din program. In cazul "status" apelez functia
+status_command care realizeaza afisarea corespunzatoare.
+		Cand primesc un mesaj de la unul din clienti, verific intr-un mod
+asemanator cu cel descris tipul comenzii si apelez fuctia corespunzatoare ei.
+In cazul "quit" inchid conexiunea cu clientul si il elimin din structurile de
+date.
+
+	Client
+		Ca si la server, in client am retinut o tabela de dispersie in care
+retin informatii despre clientii pentru care s-a dat comanda infoclient*. De
+asemenea, utilizez si vectorul shared_files, care contine numele fisierelor
+partajate de client.
+		Si aici am implentat functii auxiliare(is_shared, word_count, print_log
+close_set_sockets, quit) si functii specifice comenzilor.
+		Deoarece un client poate juca rolul si de server in cazul transmiterii
+de fisiere, el utilizeaza 2 socketi, unul pentru a comunica cu serverul, iar
+celalalt pentru a asculta pentru conexiuni din partea altor clienti.
+		Atunci cand primesc ceva pe socketul care asculta, noua conexiune este
+memorata iar descriptorul corespunzator este adaugat la multimea descriptorilor
+de citire. Aceasta noua conexiune este in mod sigur un alt client care doreste
+transmiterea unui fisier.
+		In cazul primirii unui mesaj de la standard input, interpretarea se
+face asemanator cu cea de la server, in sensul ca sunt apelate functii
+corespunzatoare comenzilor valide. Daca sunt simple, comenzile sunt trimise mai
+departe la server (comenzile listclients, infoclient, getshare, infofile).
+Comenzile si rezultatele lor sunt scrise in fisierul de log.
+		Comanda getfile este cea mai complexa. Inainte de trimiterea ei sunt
+verificate mai multe conditii. Prima este existenta clientului de la care se
+doreste fisierul, adica conexiunea lui la server. Daca el nu se afla in tabela
+clients sau daca nu se poate realiza conexiunea cu el, inseamna ca nu se poate
+obtine fisierul, deci afisez eroarea -4. Urmatoarea conditie este existenta
+fisierului dorit printre fisierele partajate de clientul respectiv. Acesta este
+verificata prin conectarea la client, deoarece acesta intoarce cod de eroare -2
+daca nu a partajat fisierul sau confirmarea "ok", altfel. Mai este si conditia
+ca celalalt client sa nu fie in cursul partajarii unui fisier cu alt client,
+care este verificata tot dupa conectarea dintre clienti, fiind trimisa eroarea
+-4 daca conditia nu este indeplinita. In cazul in care in folderul clientului
+care cere un fisier se afla un alt fisier cu acelasi nume, utilizatorul este
+intrebat daca doreste suprascrierea lui. Daca toate conditiile sunt
+indeplinite, flagul care anunta ca un client este in cursul primirii unui
+fisier(receiving_flag) este setat si se deschide pentru scriere fisierul (se
+creaza sau se suprascrie).
+		In cazul primirii unui mesaj pe unul din socketii din multimea
+descriptorilor de citire, excluzand standard input, stiu sigur ca reprezinta un
+request pentru partajarea unui fisier, deoarece clientii nu isi trimit altfel
+de comenzi direct. Atunci sunt verificare o parte din conditiile mentionate mai
+sus si sunt trimise inapoi mesajele corespunzatoare. In cazul in care
+conditiile sunt indeplinite, este setat flagul care anunta ca un client este in
+cursul trimiterii unui fisier(sending_flag) este deschis pentru citire fisierul
+de trimis, iar socketul pe care se vor trimite in continuare portiuni din
+fisier (to_fd) este socketul pe care a venit requestul.
+		Pentru a permite functionarea simultana a partajarii de fisiere si a
+citirii de la consola, am dat ca parametru un timeout cu valoarea de o secunda
+in apelul select de la inceputul buclei while. Astfel, daca dupa o secunda,
+select nu intoarce nimic, adica nu vin mesaje pe niciun socket din multimea de
+citire, clientul poate primi sau trimite portiuni de fisier. Daca este setat
+sending_file, se citeste si se trimite urmatoarea bucata din fisier, iar daca
+s-au citit 0 octeti inseamna ca s-a ajuns la finalul fisierului si trimiterea
+s-a incheiat. Daca este setat receiving_file, se citeste de pe socketul care
+conecteaza clientii si se scrie in fisier. Daca socketul este inchis sau se
+citesc 0 octeti inseamna ca fisierul este complet si nu mai exista nimic de
+primit.
+		Raspunsurile serverului sunt citite de pe socketul care il conecteaza
+de client. In cazul in care apelul recv pe acest socket intoarce 0 insemna ca
+serverul a inchis conexiunea, a fost oprit, deci si clientul trebuie sa inchida
+toate conexiunile sale si sa iasa.
+		
+		*Detectia comenzilor infoclient se face in felul urmator: daca
+raspunsul primit de la server de catre un client nu este eroare si numarul de
+cuvinte(delimitate prin spatiu " ") din mesaj este 5, inseamna ca el este
+raspuns la comanda infoclient, deoarece raspunsul la listclients are cuvinte
+delimitate prin linie noua, la getshare numarul de cuvinte este multiplu de 2,
+la infofile - multiplu de 3, iar la sharefile si unsharefile fie este "Succes"
+fie eroare.
